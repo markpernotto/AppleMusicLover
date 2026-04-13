@@ -294,7 +294,16 @@ button.active { background: var(--accent); color: #fff; border-color: var(--acce
   border-top: 1px solid var(--border);
   padding: 8px 16px 0;
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
+.footer-link {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-decoration: none;
+}
+.footer-link:hover { color: var(--text-dim); }
 .debug-toggle-label {
   display: flex;
   align-items: center;

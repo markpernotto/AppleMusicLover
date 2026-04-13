@@ -10,16 +10,11 @@ You can also override any dimension manually: lock to a specific genre, steer to
 
 ## Privacy
 
-Every track you listen to sends its ISRC code to two third-party services:
+On every track play, the track's ISRC code is sent to **Deezer** to look up BPM, duration, and artist radio data. Deezer can infer your listening history from these requests.
 
-- **Deezer** — to look up BPM, track duration, and artist radio
-- **Apple Music catalog API** — to resolve genre metadata
+Your Apple Music credentials never leave your device. All preference data is stored locally. The extension shows a full disclosure on first use.
 
-This means both services can infer your listening history. Your Apple Music credentials never leave your device. All preference data is stored locally. See the in-extension disclosure for full details.
-
-## Getting started
-
-The extension runs on `music.apple.com` in Safari. Build and load it via Xcode:
+## Building from source
 
 ```
 cd extension
@@ -27,10 +22,18 @@ npm install
 npm run build
 ```
 
-Then open the Xcode project in `xcode/` and run it targeting your device or simulator.
+Then open `xcode/Apple Music Lover.xcodeproj` in Xcode and run the app. Enable the extension in Safari → Settings → Extensions.
 
 ## How it works
 
 See [USERGUIDE.md](USERGUIDE.md) for how to use the controls and how they interact.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for a full breakdown of the recommendation pipeline, the two-script isolation model, and the scoring system.
+
+## Contributing
+
+Bug reports and pull requests welcome at [github.com/markpernotto/AppleMusicLover](https://github.com/markpernotto/AppleMusicLover).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright © 2026 [Facet Build, LLC](https://facetbuild.llc).

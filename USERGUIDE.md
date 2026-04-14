@@ -20,7 +20,7 @@ When set to **Auto**, genre follows your recent listening.
 ### Era
 Lock recommendations to a specific decade. Use **◀ ▶** to step through decades. Double-click the displayed value to unlock it back to Auto.
 
-**<1990s** covers anything pre-1990 as a single bucket (decade-level coverage gets thin before that in streaming catalogs).
+**<1960s** covers anything pre-1960 as a single bucket (streaming catalog coverage gets thin before that point).
 
 When set to **Auto**, era follows your recent listening.
 

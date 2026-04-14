@@ -32,7 +32,8 @@ const ENRICHMENT_TIMEOUT_MS  = 10000; // max wait for enrichment before giving u
 // Write the current vibe + up-next list to storage so the popup can poll it
 // without relying on message-passing timing (chrome.runtime.sendMessage is unreliable in Safari).
 function saveUpNext() {
-  chrome.storage.local.set({ upNextList: upNextList.slice() });
+  chrome.storage.local.set({ upNextList: upNextList.slice() })
+    .catch(() => {}); // Safari dev-mode quota can be very small — fail silently
 }
 
 function saveVibeProfile() {
@@ -43,7 +44,7 @@ function saveVibeProfile() {
       primaryGenre:   currentProfile.primaryGenre,
       dominantDecade: currentProfile.dominantDecade,
     },
-  });
+  }).catch(() => {}); // Safari dev-mode quota can be very small — fail silently
 }
 
 // --- Deezer API (via background service worker — avoids CORS) ---
@@ -199,11 +200,11 @@ async function queueNextVibeTrack() {
       // When genre is also forced, drop the hard era gate — the genre chart only returns
       // current songs, so hard era exclusion + forced genre = nothing ever queues.
       // Era still scores as a preference (dominantDecade) so 90s country scores higher than 2020s country.
-      // When era is forced to pre1990 and genre is also forced (so era is soft-only),
-      // use 1980 as the soft-scoring anchor so tracks from the 1970s–80s score higher
+      // When era is forced to pre1960 and genre is also forced (so era is soft-only),
+      // use 1950 as the soft-scoring anchor so pre-1960 tracks score higher
       // than tracks from 2020. Without this, the anchor falls back to the detected
-      // listening history decade (likely 2010s), which makes pre1990 preference invisible.
-      dominantDecade: fd && fd !== "pre1990" ? fd : fd === "pre1990" ? 1980 : currentProfile.dominantDecade,
+      // listening history decade (likely 2010s), which makes pre1960 preference invisible.
+      dominantDecade: fd && fd !== "pre1960" ? fd : fd === "pre1960" ? 1950 : currentProfile.dominantDecade,
       forcedDecade:   fg ? null : fd,
     };
     const scoreThreshold = userOverrides.scoreThreshold ?? 3;
@@ -382,7 +383,6 @@ async function queueNextVibeTrack() {
       profileForScoring.primaryGenre ?? "Auto",
       `${profileForScoring.dominantDecade ?? "Auto"}s`,
       profileForScoring.avgBPM ? `${Math.round(profileForScoring.avgBPM)} BPM` : null,
-      scoreThreshold !== 2 ? (scoreThreshold >= 4 ? "Strict" : "Loose") : null,
     ].filter(Boolean).join(" | ");
     log(`[AML] Queuing: "${winner.title}" by ${winner.artistName} (score: ${winner.score}) [${filterDesc}]`);
     alreadyQueued.add(winner.id);
@@ -445,7 +445,7 @@ function evictStaleQueuedTracks() {
     primaryGenre:   userOverrides.forcedGenre ?? currentProfile.primaryGenre,
     genres:         userOverrides.forcedGenre ? [userOverrides.forcedGenre] : currentProfile.genres,
     forcedGenre:    userOverrides.forcedGenre ?? null,
-    dominantDecade: userOverrides.forcedDecade && userOverrides.forcedDecade !== "pre1990"
+    dominantDecade: userOverrides.forcedDecade && userOverrides.forcedDecade !== "pre1960"
       ? userOverrides.forcedDecade : currentProfile.dominantDecade,
     forcedDecade:   userOverrides.forcedGenre ? null : (userOverrides.forcedDecade ?? null),
     recentArtists:  new Set(), // don't penalise artists during cleanup scoring
@@ -485,6 +485,11 @@ async function onNowPlayingChanged(track) {
   recentTracks.push(enriched);
   if (recentTracks.length > VIBE_WINDOW) recentTracks.shift();
 
+  // Grab the pre-verified MB date (if AML queued this track) before removing from upNextList.
+  // Avoids a redundant MusicBrainz round-trip for tracks we already looked up as candidates.
+  const queuedEntry  = upNextList.find(t => t.id === track.id);
+  const knownMBDate  = queuedEntry?.releaseDate ?? null;
+
   // Remove this track from the up-next list if it just started playing
   upNextList = upNextList.filter(t => t.id !== track.id);
   saveUpNext();
@@ -501,9 +506,14 @@ async function onNowPlayingChanged(track) {
   enrichmentPending  = true;
   enrichmentUntil    = Date.now() + ENRICHMENT_TIMEOUT_MS;
   if (track.isrc) {
+    // If AML queued this track, knownMBDate is already the pre-verified first-release-date.
+    // Skip the MB network call; only call for tracks Apple Music inserted (manual plays, etc.).
+    const mbPromise = knownMBDate
+      ? Promise.resolve(knownMBDate)
+      : getMBFirstRelease(track.isrc);
     Promise.all([
       getDeezerTrack(track.isrc),
-      getMBFirstRelease(track.isrc),
+      mbPromise,
     ]).then(([deezer, mbDate]) => {
       // A newer track started while we were waiting — don't touch shared state.
       if (myGeneration !== enrichmentGeneration) return;
@@ -517,9 +527,13 @@ async function onNowPlayingChanged(track) {
       // returns the remaster year for catalog reissues and poisons era detection.
       // e.g. "Bad" (1987) has ISRC USSM11204980 (2012 remaster) → AM says 2012,
       // MusicBrainz says 1987. We always prefer MB when available.
-      if (mbDate) {
+      if (mbDate && mbDate !== track.releaseDate) {
         enriched.releaseDate = mbDate;
-        log(`[AML] MusicBrainz corrected release date for "${track.title}": ${track.releaseDate} → ${mbDate}`);
+        if (!knownMBDate) {
+          log(`[AML] MusicBrainz corrected release date for "${track.title}": ${track.releaseDate} → ${mbDate}`);
+        }
+      } else if (mbDate) {
+        enriched.releaseDate = mbDate;
       }
       currentProfile = { ...buildVibeProfile(recentTracks), ...userOverrides };
       saveVibeProfile();
@@ -641,6 +655,13 @@ document.addEventListener("visibilitychange", () => {
 // Apply new overrides from storage. Called via chrome.storage.onChanged — more reliable
 // in Safari than chrome.tabs.sendMessage, which silently drops messages to content scripts.
 function applyOverrides(newOverrides) {
+  // Normalize legacy sentinel value — pre1990 was renamed to pre1960 when earlier decades
+  // were added. Old values persisted in storage would otherwise break era scoring.
+  if (newOverrides.forcedDecade === "pre1990") newOverrides.forcedDecade = "pre1960";
+
+  // scoreThreshold is no longer a user-facing control — ignore any stale stored value.
+  delete newOverrides.scoreThreshold;
+
   const prev    = userOverrides.pinnedArtist;
   const prevKey = `${userOverrides.bpmOffset}|${userOverrides.forcedDecade}|${userOverrides.forcedGenre}|${userOverrides.scoreThreshold}|${userOverrides.pinnedArtist}`;
   userOverrides = newOverrides;

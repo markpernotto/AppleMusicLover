@@ -71,28 +71,26 @@
 		61B54BD92F8846D2006907B6 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = assets; path = ../../../extension/assets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		61F1B4422F8857CE00C2EE1B /* Exceptions for "dist" folder in "Apple Music Lover Extension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"content-script.js",
-				popup.js,
-				"service-worker.js",
+/* Begin PBXShellScriptBuildPhase section */
+		61AE00012FA00000000000A1 /* Run npm build */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
-			target = 61B54BC12F8846D2006907B6 /* Apple Music Lover Extension */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		61F1B43E2F8851E600C2EE1B /* dist */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				61F1B4422F8857CE00C2EE1B /* Exceptions for "dist" folder in "Apple Music Lover Extension" target */,
+			inputFileListPaths = (
 			);
-			path = dist;
-			sourceTree = "<group>";
+			inputPaths = (
+			);
+			name = "Run npm build";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export PATH=\"/opt/homebrew/bin:$PATH\"\ncd \"$SRCROOT/../../../extension\" && npm run build\n";
 		};
-/* End PBXFileSystemSynchronizedRootGroup section */
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		61B54BA42F8846D1006907B6 /* Frameworks */ = {
@@ -157,7 +155,6 @@
 		61B54BC62F8846D2006907B6 /* Apple Music Lover Extension */ = {
 			isa = PBXGroup;
 			children = (
-				61F1B43E2F8851E600C2EE1B /* dist */,
 				61B54BD32F8846D2006907B6 /* Resources */,
 				61B54BC72F8846D2006907B6 /* SafariWebExtensionHandler.swift */,
 				61B54BC92F8846D2006907B6 /* Info.plist */,
@@ -209,14 +206,12 @@
 			buildPhases = (
 				61B54BBE2F8846D2006907B6 /* Sources */,
 				61B54BBF2F8846D2006907B6 /* Frameworks */,
+				61AE00012FA00000000000A1 /* Run npm build */,
 				61B54BC02F8846D2006907B6 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				61F1B43E2F8851E600C2EE1B /* dist */,
 			);
 			name = "Apple Music Lover Extension";
 			packageProductDependencies = (

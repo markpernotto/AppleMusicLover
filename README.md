@@ -10,9 +10,12 @@ You can also override any dimension manually: lock to a specific genre, steer to
 
 ## Privacy
 
-On every track play, the track's ISRC code is sent to **Deezer** to look up BPM, duration, and artist radio data. Deezer can infer your listening history from these requests.
+On every track play, the track's ISRC code is sent to two third-party services:
 
-Your Apple Music credentials never leave your device. All preference data is stored locally. The extension shows a full disclosure on first use.
+- **Deezer** — to look up BPM, duration, and artist radio data
+- **MusicBrainz** — to look up the track's original release date (Apple Music returns the remaster year for catalog reissues, which breaks era detection)
+
+Both services can infer your listening history from these requests. Your Apple Music credentials never leave your device. All preference data is stored locally. The extension shows a full disclosure on first use.
 
 ## Building from source
 

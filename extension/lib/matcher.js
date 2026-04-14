@@ -173,9 +173,9 @@ function scoreCandidate(candidate, profile, alreadyQueued = new Set()) {
     const candidateYear    = new Date(candidate.releaseDate).getFullYear();
     const candidateDecade  = Math.floor(candidateYear / 10) * 10;
 
-    if (profile.forcedDecade === "pre1990") {
-      // Special sentinel: accept any track before 1990, no specific decade required
-      if (candidateYear >= 1990) return -1;
+    if (profile.forcedDecade === "pre1960") {
+      // Special sentinel: accept any track before 1960, no specific decade required
+      if (candidateYear >= 1960) return -1;
       score += WEIGHTS.era;
     } else if (profile.forcedDecade && profile.dominantDecade) {
       // Locked to a specific decade — hard-exclude anything else

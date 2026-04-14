@@ -1,20 +1,29 @@
 // metadata-bridge.js
-// Deezer API calls — runs in background service worker (CORS-exempt).
+// Deezer + MusicBrainz API calls — runs in background service worker (CORS-exempt).
 
 const DEEZER_BASE = "https://api.deezer.com";
 
+// In-memory caches keyed by ISRC — persist for the service worker's lifetime (the session).
+// Eliminates redundant network calls when the same track is looked up twice
+// (e.g. pre-verified as a candidate, then looked up again when it starts playing).
+const _deezerCache = new Map();
+const _mbCache     = new Map();
+
 // Look up a track by ISRC — returns BPM, Deezer track ID, and artist Deezer ID
 async function getDeezerTrackByISRC(isrc) {
+  if (_deezerCache.has(isrc)) return _deezerCache.get(isrc);
   const res = await fetch(`${DEEZER_BASE}/track/isrc:${isrc}`);
   const data = await res.json();
   if (data.error) return null;
-  return {
+  const result = {
     bpm:            data.bpm ?? 0,
     duration:       data.duration,
     deezerId:       data.id,
     artistDeezerId: data.artist?.id ?? null,
     isrc:           data.isrc,
   };
+  _deezerCache.set(isrc, result);
+  return result;
 }
 
 // Get similar tracks via Deezer's artist radio endpoint.
@@ -87,6 +96,7 @@ async function searchDeezerArtist(name) {
 // release across all editions, so "Bad" (1987) stays 1987 regardless of which
 // 2012 remaster ISRC you query.
 async function getMusicBrainzFirstRelease(isrc) {
+  if (_mbCache.has(isrc)) return _mbCache.get(isrc);
   const res = await fetch(
     `https://musicbrainz.org/ws/2/isrc/${isrc}?fmt=json`,
     { headers: { "User-Agent": "AppleMusicLover/0.1 (safari-extension; https://github.com/markpernotto/AppleMusicLover)" } }
@@ -98,7 +108,9 @@ async function getMusicBrainzFirstRelease(isrc) {
     .filter(Boolean);
   if (!dates.length) return null;
   // ISO string sort is stable for YYYY, YYYY-MM, YYYY-MM-DD — earliest sorts first
-  return dates.sort()[0];
+  const date = dates.sort()[0];
+  _mbCache.set(isrc, date);
+  return date;
 }
 
 export { getDeezerTrackByISRC, getDeezerRadio, searchDeezerByBPM, searchDeezerArtist, getMusicBrainzFirstRelease };

@@ -74,7 +74,7 @@ Apple Music's genre taxonomy doesn't match user-facing labels. "Indie" isn't an 
 
 ## Era handling
 
-Eras are bucketed by decade. The special sentinel value `"pre1990"` matches any track released before 1990 — it exists because Deezer's catalog coverage for pre-90s music is thin enough that targeting a specific decade (1980s, 1970s, etc.) would produce too few candidates.
+Eras are bucketed by decade from the 1960s through the 2020s. The special sentinel value `"pre1960"` matches any track released before 1960 — streaming catalog coverage before that point is too sparse for decade-level targeting to return enough candidates.
 
 When genre and era are both forced simultaneously, era drops to soft scoring. The Apple Music genre chart only returns current/popular songs, so hard era exclusion combined with forced genre would produce nothing.
 

@@ -2,8 +2,8 @@
 // Displays the current vibe profile and lets the user nudge filters.
 
 const TEMPO_STEP   = 15;  // BPM shift per slower/faster click
-// "pre1990" is a sentinel — scored as "any track before 1990", no specific decade required
-const DECADES      = ["pre1990", 1990, 2000, 2010, 2020];
+// "pre1960" is a sentinel — scored as "any track before 1960", no specific decade required
+const DECADES      = ["pre1960", 1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
 let currentProfile     = null;
 let overrides          = { bpmOffset: 0, forcedDecade: null, forcedGenre: null, pinnedArtist: null };
@@ -46,10 +46,10 @@ function renderProfile() {
   bpmValue.textContent   = effectiveBPM ? `${effectiveBPM}` : "—";
   genreValue.textContent = overrides.forcedGenre ?? currentProfile?.primaryGenre ?? "—";
   const detectedDecadeLabel = !currentProfile?.dominantDecade ? "—"
-    : currentProfile.dominantDecade < 1990 ? "<1990s"
+    : currentProfile.dominantDecade < 1990 ? "<1960s"
     : `${currentProfile.dominantDecade}s`;
   eraValue.textContent   = overrides.forcedDecade
-    ? (overrides.forcedDecade === "pre1990" ? "<1990s" : `${overrides.forcedDecade}s`)
+    ? (overrides.forcedDecade === "pre1960" ? "<1960s" : `${overrides.forcedDecade}s`)
     : detectedDecadeLabel;
   // Briefly highlight changed overrides in red, then settle back to white.
   const flash = (Date.now() - lastOverrideChange) < OVERRIDE_FLASH_MS;
@@ -73,7 +73,7 @@ function renderProfile() {
 
   // Era display — locked value in pink, detected value in dim (no "Auto")
   if (overrides.forcedDecade !== null) {
-    eraDisplay.textContent = overrides.forcedDecade === "pre1990" ? "<1990s" : `${overrides.forcedDecade}s`;
+    eraDisplay.textContent = overrides.forcedDecade === "pre1960" ? "<1960s" : `${overrides.forcedDecade}s`;
     eraDisplay.classList.add("pinned");
     eraAutoHint.textContent = "";
     eraHint.textContent = "Double-click to unlock";

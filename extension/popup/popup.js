@@ -13,6 +13,8 @@ let overrides          = { bpmOffset: 0, forcedDecade: null, forcedGenre: null, 
 let rendering          = false; // suppress change events fired by renderProfile()
 let lastOverrideChange = 0;
 let authStatus         = null; // null = unknown, 'ok', 'not_signed_in'
+let onAppleMusic       = false;
+let disclosureDone     = false;
 const OVERRIDE_FLASH_MS = 3000;
 
 // Elements
@@ -70,13 +72,6 @@ function renderProfile() {
       ? "Detected from your recent tracks. Change any control below to take over."
       : "Play a track to start detecting your vibe.";
 
-  // Override hint if not signed in or no subscription
-  if (authStatus === "not_signed_in") {
-    vibeHint.textContent = "Sign in to Apple Music in Safari to use this extension.";
-  } else if (authStatus === "no_subscription") {
-    vibeHint.textContent = "An Apple Music subscription is required to use this extension.";
-  }
-
   // Tempo hint
   if (overrides.bpmOffset !== 0) {
     const dir = overrides.bpmOffset > 0 ? "faster" : "slower";
@@ -113,6 +108,7 @@ function renderProfile() {
       : "";
 
   rendering = false;
+  updateScreen();
 }
 
 function pushOverrides() {
@@ -218,9 +214,33 @@ const disclosureScreen = document.getElementById("disclosureScreen");
 const mainContent      = document.getElementById("mainContent");
 const confirmBtn       = document.getElementById("disclosureConfirmBtn");
 
+function showScreen(id) {
+  document.getElementById("wrongSiteScreen").style.display   = id === "wrongSiteScreen"   ? "" : "none";
+  document.getElementById("notSignedInScreen").style.display = id === "notSignedInScreen"  ? "" : "none";
+  mainContent.style.display                                   = id === "mainContent"        ? "block" : "none";
+}
+
+function updateScreen() {
+  if (!disclosureDone) return;
+  if (!onAppleMusic) {
+    showScreen("wrongSiteScreen");
+  } else if (authStatus === "not_signed_in") {
+    document.getElementById("gateTitle").textContent = "Sign in to Apple Music";
+    document.getElementById("gateBody").textContent  = "Sign in to your Apple Music account in Safari, then come back.";
+    showScreen("notSignedInScreen");
+  } else if (authStatus === "no_subscription") {
+    document.getElementById("gateTitle").textContent = "Apple Music required";
+    document.getElementById("gateBody").textContent  = "An Apple Music subscription is required to use this extension.";
+    showScreen("notSignedInScreen");
+  } else {
+    showScreen("mainContent");
+  }
+}
+
 function showMain() {
   disclosureScreen.style.display = "none";
-  mainContent.style.display      = "block";
+  disclosureDone = true;
+  updateScreen();
 }
 
 chrome.storage.local.get("privacyAcknowledged", result => {
@@ -281,7 +301,9 @@ setInterval(() => {
 
 // Request current profile + queue from active tab
 chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-  if (tabs[0]?.id) {
+  onAppleMusic = (tabs[0]?.url ?? "").includes("music.apple.com");
+  updateScreen();
+  if (tabs[0]?.id && onAppleMusic) {
     chrome.tabs.sendMessage(tabs[0].id, { type: "GET_PROFILE" }, response => {
       if (response?.profile) {
         currentProfile = response.profile;

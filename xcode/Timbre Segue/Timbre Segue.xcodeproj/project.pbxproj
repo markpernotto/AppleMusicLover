@@ -31,7 +31,7 @@
 			containerPortal = 61B54B9F2F8846D1006907B6 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 61B54BC12F8846D2006907B6;
-			remoteInfo = "Timbre Extension";
+			remoteInfo = "Timbre Segue Extension";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -50,7 +50,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		61B54BA72F8846D1006907B6 /* Timbre.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Timbre.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		61B54BA72F8846D1006907B6 /* Timbre.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Timbre Segue.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		61B54BAA2F8846D1006907B6 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		61B54BAE2F8846D1006907B6 /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
 		61B54BB02F8846D1006907B6 /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
@@ -60,7 +60,7 @@
 		61B54BB92F8846D1006907B6 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		61B54BBB2F8846D2006907B6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		61B54BBD2F8846D2006907B6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		61B54BC22F8846D2006907B6 /* Timbre Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Timbre Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		61B54BC22F8846D2006907B6 /* Timbre Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Timbre Segue Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		61B54BC72F8846D2006907B6 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		61B54BC92F8846D2006907B6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		61B54BD42F8846D2006907B6 /* background */ = {isa = PBXFileReference; lastKnownFileType = folder; name = background; path = ../../../extension/background; sourceTree = "<group>"; };
@@ -138,7 +138,7 @@
 				61B54BBD2F8846D2006907B6 /* Info.plist */,
 				61B54BAC2F8846D1006907B6 /* Resources */,
 			);
-			path = Timbre;
+			path = "Timbre Segue";
 			sourceTree = "<group>";
 		};
 		61B54BAC2F8846D1006907B6 /* Resources */ = {
@@ -159,7 +159,7 @@
 				61B54BC72F8846D2006907B6 /* SafariWebExtensionHandler.swift */,
 				61B54BC92F8846D2006907B6 /* Info.plist */,
 			);
-			path = "Timbre Extension";
+			path = "Timbre Segue Extension";
 			sourceTree = "<group>";
 		};
 		61B54BD32F8846D2006907B6 /* Resources */ = {
@@ -173,7 +173,7 @@
 				61B54BD92F8846D2006907B6 /* assets */,
 			);
 			name = Resources;
-			path = "Timbre Extension";
+			path = "Timbre Segue Extension";
 			sourceTree = SOURCE_ROOT;
 		};
 /* End PBXGroup section */
@@ -193,10 +193,10 @@
 			dependencies = (
 				61B54BC52F8846D2006907B6 /* PBXTargetDependency */,
 			);
-			name = Timbre;
+			name = "Timbre Segue";
 			packageProductDependencies = (
 			);
-			productName = Timbre;
+			productName = "Timbre Segue";
 			productReference = 61B54BA72F8846D1006907B6 /* Timbre.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -213,10 +213,10 @@
 			);
 			dependencies = (
 			);
-			name = "Timbre Extension";
+			name = "Timbre Segue Extension";
 			packageProductDependencies = (
 			);
-			productName = "Timbre Extension";
+			productName = "Timbre Segue Extension";
 			productReference = 61B54BC22F8846D2006907B6 /* Timbre Extension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
@@ -463,8 +463,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Timbre Extension/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Timbre Extension";
+				INFOPLIST_FILE = "Timbre Segue Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Timbre Segue Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -498,8 +498,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Timbre Extension/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Timbre Extension";
+				INFOPLIST_FILE = "Timbre Segue Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Timbre Segue Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -537,8 +537,8 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Timbre/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = Timbre;
+				INFOPLIST_FILE = "Timbre Segue/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Timbre Segue";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Facet Build, LLC";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
@@ -556,7 +556,7 @@
 					WebKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.facetbuild.applemusiclover;
-				PRODUCT_NAME = Timbre;
+				PRODUCT_NAME = "Timbre Segue";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -581,8 +581,8 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Timbre/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = Timbre;
+				INFOPLIST_FILE = "Timbre Segue/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Timbre Segue";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Facet Build, LLC";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
@@ -600,7 +600,7 @@
 					WebKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.facetbuild.applemusiclover;
-				PRODUCT_NAME = Timbre;
+				PRODUCT_NAME = "Timbre Segue";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

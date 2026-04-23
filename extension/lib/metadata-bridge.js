@@ -99,7 +99,7 @@ async function getMusicBrainzFirstRelease(isrc) {
   if (_mbCache.has(isrc)) return _mbCache.get(isrc);
   const res = await fetch(
     `https://musicbrainz.org/ws/2/isrc/${isrc}?fmt=json`,
-    { headers: { "User-Agent": "Timbre/0.1 (safari-extension; https://github.com/markpernotto/timbre)" } }
+    { headers: { "User-Agent": "Timbre-Segue/0.1 (safari-extension; https://github.com/markpernotto/timbre)" } }
   );
   if (!res.ok) return null;
   const data = await res.json();

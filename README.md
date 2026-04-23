@@ -1,10 +1,10 @@
-# Timbre
+# Timbre Segue
 
 A Safari browser extension that replaces Apple Music's default autoplay with metadata-driven recommendations — matching tempo, genre, and era instead of popularity.
 
 ## What it does
 
-When you listen on music.apple.com, Timbre watches what you play and builds a vibe profile from your recent tracks: average BPM, dominant genre, and dominant decade. As your queue runs low, it finds new tracks that match that profile and inserts them silently — so playback never stops and never drifts too far from where you started.
+When you listen on music.apple.com, Timbre Segue watches what you play and builds a vibe profile from your recent tracks: average BPM, dominant genre, and dominant decade. As your queue runs low, it finds new tracks that match that profile and inserts them silently — so playback never stops and never drifts too far from where you started.
 
 You can also override any dimension manually: lock to a specific genre, steer toward an era, shift the tempo up or down, or seed the recommendations from a specific artist.
 
@@ -25,7 +25,7 @@ npm install
 npm run build
 ```
 
-Then open `xcode/Timbre/Timbre.xcodeproj` in Xcode and run the app. Enable the extension in Safari → Settings → Extensions.
+Then open `xcode/Timbre Segue/Timbre Segue.xcodeproj` in Xcode and run the app. Enable the extension in Safari → Settings → Extensions.
 
 ## How it works
 

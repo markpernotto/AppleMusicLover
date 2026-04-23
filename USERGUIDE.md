@@ -1,4 +1,4 @@
-# Timbre — User Guide
+# Timbre Segue — User Guide
 
 ## How it works
 

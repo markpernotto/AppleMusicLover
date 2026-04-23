@@ -13,8 +13,9 @@ let debugMode = false;
 function log(...args) { if (debugMode) console.log(...args); }
 
 let recentTracks    = [];
-let alreadyQueued   = new Set(); // track IDs already queued this session
-let queuedArtists   = new Set(); // primary artists already queued this session
+let alreadyQueued     = new Set(); // track IDs already queued this session
+let queuedArtists     = new Set(); // primary artists already queued this session
+let playedThisSession = new Set(); // track IDs that have actually played — never re-queued
 let radioSeedQueue  = [];        // artist Deezer IDs to rotate through for radio calls
 let upNextList      = [];        // ordered list of queued tracks for popup display
 let intercepting    = true;
@@ -22,6 +23,8 @@ let currentProfile = null;
 let userOverrides  = {};
 let pageTokens     = null;
 let working              = false; // prevent concurrent recommendation runs
+let audioBPMEnriched     = null;  // enriched track object waiting for audio BPM result
+let audioBPMGeneration   = 0;    // matches enrichmentGeneration to avoid stale updates
 let lastQueuedAt         = 0;    // timestamp of last successful playNext() — gates rapid re-fires
 let enrichmentPending    = false; // true while Deezer + MusicBrainz calls are in-flight for current track
 let enrichmentUntil      = 0;    // safety fallback — unblocks if APIs never respond
@@ -334,7 +337,7 @@ async function queueNextVibeTrack() {
       // Each resolveISRC call is isolated — a single network blip skips that candidate
       // rather than aborting the whole recommendation attempt.
       verified = [];
-      for (const c of unique.slice(0, 20)) {
+      for (const c of unique.sort(() => Math.random() - 0.5).slice(0, 20)) {
         if (c.genreNames?.length) {
           verified.push(c);  // already resolved (chart song)
         } else if (c.isrc) {
@@ -547,6 +550,10 @@ function evictStaleQueuedTracks() {
 async function onNowPlayingChanged(track) {
   if (!track) return;
 
+  // Cancel any in-flight audio BPM analysis from the previous track.
+  window.postMessage({ type: `${PREFIX}STOP_BPM_ANALYSIS` }, "*");
+  audioBPMEnriched   = null;
+
   // New track = fresh start for the retry counter.
   queueNextVibeTrack._consecutiveFailures = 0;
 
@@ -560,6 +567,7 @@ async function onNowPlayingChanged(track) {
   const enriched = { ...track, genreNames: genres, bpm: null };
   log(`[AML] Now playing: "${track.title}" — ${track.artistName}  ISRC: ${track.isrc}  Genres: ${genres.join(", ")}`);
 
+  if (track.id) playedThisSession.add(track.id);
   recentTracks.push(enriched);
   if (recentTracks.length > VIBE_WINDOW) recentTracks.shift();
 
@@ -600,6 +608,11 @@ async function onNowPlayingChanged(track) {
         enriched.bpm            = deezer.bpm;
         enriched.deezerId       = deezer.deezerId;
         enriched.artistDeezerId = deezer.artistDeezerId;
+      } else {
+        // Deezer has no BPM — analyze the live audio stream instead.
+        audioBPMEnriched   = enriched;
+        audioBPMGeneration = myGeneration;
+        window.postMessage({ type: `${PREFIX}START_BPM_ANALYSIS` }, "*");
       }
       // MusicBrainz first-release-date overrides Apple Music's releaseDate, which
       // returns the remaster year for catalog reissues and poisons era detection.
@@ -725,6 +738,22 @@ window.addEventListener("message", e => {
       break;
     case `${PREFIX}PLAY_NEXT_OK`:
       break;
+    case `${PREFIX}BPM_RESULT`: {
+      const bpm = e.data.bpm;
+      if (audioBPMEnriched && audioBPMGeneration === enrichmentGeneration && bpm) {
+        audioBPMEnriched.bpm = bpm;
+        audioBPMEnriched = null;
+        currentProfile = { ...buildVibeProfile(recentTracks), ...userOverrides };
+        saveVibeProfile();
+        log(`[AML] Audio BPM detected: ${bpm}`);
+        chrome.runtime.sendMessage({
+          type:    "VIBE_PROFILE_UPDATED",
+          profile: { avgBPM: currentProfile.avgBPM, primaryGenre: currentProfile.primaryGenre, dominantDecade: currentProfile.dominantDecade },
+          upNext:  upNextList.slice(),
+        });
+      }
+      break;
+    }
   }
 });
 
@@ -783,8 +812,11 @@ function applyOverrides(newOverrides) {
     }
 
     // Reset alreadyQueued to only the preserved tracks so we don't re-queue them.
+    // Also restore all played-this-session IDs — settings changes shouldn't bring
+    // songs back that the user has already heard.
     alreadyQueued.clear();
     for (const t of upNextList) alreadyQueued.add(t.id);
+    for (const id of playedThisSession) alreadyQueued.add(id);
     queuedArtists.clear();
     radioSeedQueue.length = 0;
     // upNextList is intentionally left as-is — preserved tracks stay visible in popup.

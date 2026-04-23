@@ -1,4 +1,4 @@
-# Apple Music Lover
+# Timbre
 
 A Safari browser extension that replaces Apple Music's default autoplay with metadata-driven recommendations — matching tempo, genre, and era instead of popularity.
 

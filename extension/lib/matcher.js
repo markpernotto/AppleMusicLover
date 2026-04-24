@@ -107,7 +107,7 @@ const GENRE_CORE = {
   "classical":    ["classical", "orchestral", "chamber music", "opera", "contemporary classical", "soundtrack"],
   "reggae":       ["reggae", "dancehall", "ska", "dub"],
   "latin":        ["latin", "urbano latino", "reggaeton", "latin pop", "salsa", "bachata", "cumbia"],
-  "metal":        ["metal", "heavy metal", "alternative metal", "death metal", "black metal", "thrash metal"],
+  "metal":        ["metal", "heavy metal", "hard rock", "alternative metal", "metalcore", "death metal", "black metal", "thrash metal", "progressive metal", "power metal", "doom metal"],
   "blues":        ["blues", "jazz/blues", "rhythm and blues"],
   "folk":         ["folk", "contemporary folk", "folk-rock", "singer/songwriter", "country & folk"],
   "singer/songwriter": ["singer/songwriter", "folk", "contemporary folk", "americana"],
@@ -148,8 +148,13 @@ function scoreCandidate(candidate, profile, alreadyQueued = new Set()) {
   // Capped at WEIGHTS.genre: a genre match is a genre match, tracks with many tags
   // (e.g. Björk) shouldn't outscore tracks with fewer tags just because of tag count.
   const candidateGenres = (candidate.genreNames ?? []).map(g => g.toLowerCase());
-  const profileExpanded = profile.genres.flatMap(g => expandGenre(g));
-  const overlap = candidateGenres.filter(g => profileExpanded.includes(g)).length;
+  // Use the primary genre's core aliases for scoring — avoids cross-genre matches where
+  // a Metal track's "Rock" tag causes Hip-Hop tracks (also tagged "Rock") to score full points.
+  const primaryForScoring = profile.primaryGenre?.toLowerCase();
+  const scoringAliases = primaryForScoring
+    ? (GENRE_CORE[primaryForScoring] ?? GENRE_ALIASES[primaryForScoring] ?? [primaryForScoring])
+    : profile.genres.flatMap(g => expandGenre(g));
+  const overlap = candidateGenres.filter(g => scoringAliases.includes(g)).length;
   score += overlap > 0 ? WEIGHTS.genre : 0;
 
   // When a genre is explicitly forced, require overlap with the *core* (tight) alias set —

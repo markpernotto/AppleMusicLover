@@ -40,9 +40,9 @@ async function getDeezerRadio(artistDeezerId, limit = 25) {
       try {
         const r = await fetch(`${DEEZER_BASE}/track/${t.id}`);
         const d = await r.json();
-        if (d.error) { console.log("[AML metadata] Track enrich error for", t.id, d.error); return null; }
+        if (d.error) { console.log("[TS metadata] Track enrich error for", t.id, d.error); return null; }
         return { ...t, isrc: d.isrc, bpm: d.bpm ?? t.bpm };
-      } catch (e) { console.log("[AML metadata] Track enrich fetch failed:", e?.message); return null; }
+      } catch (e) { console.log("[TS metadata] Track enrich fetch failed:", e?.message); return null; }
     })
   );
 
@@ -107,46 +107,6 @@ async function searchDeezerByBPMWide(bpmMin, bpmMax, limit = 25) {
     }));
 }
 
-// Genre radio — proper genre-tagged pool, unlike keyword search.
-async function getDeezerGenreRadio(genreId, limit = 50) {
-  const res  = await fetch(`${DEEZER_BASE}/genre/${genreId}/radio?limit=${limit}`);
-  const data = await res.json();
-  if (data.error) return [];
-  const raw = (data.data ?? []).slice(0, limit);
-
-  // Enrich tracks missing ISRC — cap at 15 parallel requests to stay within budget.
-  const needsEnrich = raw.filter(t => !t.isrc).slice(0, 15);
-  const enriched = new Map(
-    await Promise.all(
-      needsEnrich.map(async t => {
-        try {
-          const r = await fetch(`${DEEZER_BASE}/track/${t.id}`);
-          const d = await r.json();
-          if (d.error) return [t.id, null];
-          return [t.id, { isrc: d.isrc ?? null, bpm: d.bpm ?? null }];
-        } catch { return [t.id, null]; }
-      })
-    )
-  );
-
-  return raw
-    .map(t => {
-      const extra = enriched.get(t.id);
-      const isrc  = t.isrc ?? extra?.isrc ?? null;
-      if (!isrc) return null;
-      return {
-        title:          t.title,
-        artist:         t.artist?.name,
-        artistDeezerId: t.artist?.id ?? null,
-        isrc,
-        deezerId:       t.id,
-        bpm:            t.bpm ?? extra?.bpm ?? null,
-        duration:       t.duration,
-      };
-    })
-    .filter(Boolean);
-}
-
 // Search Deezer for an artist by name, return their Deezer ID.
 async function searchDeezerArtist(name) {
   const q   = encodeURIComponent(name);
@@ -180,4 +140,4 @@ async function getMusicBrainzFirstRelease(isrc) {
   return date;
 }
 
-export { getDeezerTrackByISRC, getDeezerRadio, searchDeezerByBPM, searchDeezerByBPMWide, getDeezerGenreRadio, searchDeezerArtist, getMusicBrainzFirstRelease };
+export { getDeezerTrackByISRC, getDeezerRadio, searchDeezerByBPM, searchDeezerByBPMWide, searchDeezerArtist, getMusicBrainzFirstRelease };

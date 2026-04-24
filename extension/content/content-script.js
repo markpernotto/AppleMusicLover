@@ -23,8 +23,6 @@ let currentProfile = null;
 let userOverrides  = {};
 let pageTokens     = null;
 let working              = false; // prevent concurrent recommendation runs
-let audioBPMEnriched     = null;  // enriched track object waiting for audio BPM result
-let audioBPMGeneration   = 0;    // matches enrichmentGeneration to avoid stale updates
 let lastQueuedAt         = 0;    // timestamp of last successful playNext() — gates rapid re-fires
 let enrichmentPending    = false; // true while Deezer + MusicBrainz calls are in-flight for current track
 let enrichmentUntil      = 0;    // safety fallback — unblocks if APIs never respond
@@ -39,11 +37,27 @@ function saveUpNext() {
     .catch(() => {}); // Safari dev-mode quota can be very small — fail silently
 }
 
+// When Deezer has no BPM data, use the midpoint of the genre's typical range as a display
+// estimate. Not used for candidate fetching (that uses the full range); only for scoring
+// and showing something useful in the popup instead of "—".
+function genreEstimatedBPM(genre) {
+  if (!genre) return null;
+  const range = GENRE_BPM_RANGES[genre.toLowerCase()];
+  return range ? Math.round((range[0] + range[1]) / 2) : null;
+}
+
+function buildProfile() {
+  const raw = buildVibeProfile(recentTracks);
+  const estimatedBPM = raw.avgBPM ? null : genreEstimatedBPM(raw.primaryGenre);
+  return { ...raw, ...userOverrides, estimatedBPM };
+}
+
 function saveVibeProfile() {
   if (!currentProfile) return;
   chrome.storage.local.set({
     vibeProfile: {
       avgBPM:         currentProfile.avgBPM,
+      estimatedBPM:   currentProfile.estimatedBPM ?? null,
       primaryGenre:   currentProfile.primaryGenre,
       dominantDecade: currentProfile.dominantDecade,
     },
@@ -97,14 +111,6 @@ function searchDeezerByBPMWide(bpmMin, bpmMax) {
   });
 }
 
-function getDeezerGenreRadio(genreId) {
-  return new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: "GET_GENRE_RADIO", genreId }, r => {
-      resolve(Array.isArray(r) ? r : []);
-    });
-  });
-}
-
 // --- Apple Music catalog (uses tokens from page bridge) ---
 
 // Maps user-facing genre names to Apple Music genre IDs.
@@ -151,21 +157,28 @@ const GENRE_BPM_RANGES = {
   "reggae":       [60,  90],
 };
 
-// Deezer genre IDs for the /genre/{id}/radio endpoint.
-// 106 = Electro, 113 = Dance (covers house/techno), 116 = Rap/Hip Hop,
-// 132 = Pop, 152 = Rock, 169 = R&B, 197 = Soul & Funk, 464 = Metal, 144 = Latin.
-const DEEZER_GENRE_IDS = {
-  "techno":       106,
-  "house":        113,
-  "electronic":   106,
-  "dance":        113,
-  "hip-hop/rap":  116,
-  "pop":          132,
-  "rock":         152,
-  "r&b/soul":     169,
-  "funk":         197,
-  "metal":        464,
-  "latin":        144,
+// Genre-specific Deezer search phrases — used when genre is forced to supplement the neutral
+// BPM-wide search with genre-targeted candidates.
+// Multi-word phrases ("deep house", "heavy metal") are much more genre-specific than bare
+// genre names ("house", "metal"), which would match unrelated song titles.
+// Genres where the name is too generic (pop, country) are omitted — the Apple Music chart
+// and neutral BPM search already provide plenty of those candidates.
+const GENRE_SEARCH_TERMS = {
+  "house":        "deep house",
+  "techno":       "techno",
+  "electronic":   "electronic",
+  "dance":        "dance music",
+  "disco":        "disco",
+  "funk":         "funk",
+  "hip-hop/rap":  "hip hop",
+  "r&b/soul":     "rnb soul",
+  "rock":         "rock music",
+  "metal":        "heavy metal",
+  "jazz":         "jazz",
+  "reggae":       "reggae",
+  "alternative":  "alternative rock",
+  "indie":        "indie music",
+  "blues":        "blues music",
 };
 
 // Fetch Apple Music genre chart — songs are guaranteed to carry correct Apple Music genre tags.
@@ -223,14 +236,14 @@ async function resolveISRC(isrc) {
 
 async function queueNextVibeTrack() {
   if (!currentProfile || !pageTokens || working) {
-    if (working)          log("[AML] Recommendation skipped — previous fetch still running");
-    else if (!pageTokens) log("[AML] Recommendation skipped — no page tokens yet");
-    else                  log("[AML] Recommendation skipped — no profile yet");
+    if (working)          log("[TS] Recommendation skipped — previous fetch still running");
+    else if (!pageTokens) log("[TS] Recommendation skipped — no page tokens yet");
+    else                  log("[TS] Recommendation skipped — no profile yet");
     return;
   }
   working = true;
   let queued = false;
-  log("[AML] Recommendation starting...");
+  log("[TS] Recommendation starting...");
   lastQueuedAt = Date.now(); // stamp immediately — blocks rapid re-fires even if no winner found
 
   try {
@@ -246,7 +259,13 @@ async function queueNextVibeTrack() {
     const profileForScoring = {
       ...currentProfile,
       recentArtists: new Set([...currentProfile.recentArtists, ...queuedArtists]),
-      avgBPM:  currentProfile.avgBPM != null ? currentProfile.avgBPM + bpmOffset : null,
+      // Use real Deezer BPM when available; fall back to genre-estimated midpoint so
+      // scoring can still award BPM points even when Deezer has no data for this track.
+      avgBPM:  currentProfile.avgBPM != null
+                 ? currentProfile.avgBPM + bpmOffset
+                 : currentProfile.estimatedBPM != null
+                   ? currentProfile.estimatedBPM + bpmOffset
+                   : null,
       bpmMin:  currentProfile.bpmMin != null ? currentProfile.bpmMin + bpmOffset : null,
       bpmMax:  currentProfile.bpmMax != null ? currentProfile.bpmMax + bpmOffset : null,
 
@@ -269,10 +288,11 @@ async function queueNextVibeTrack() {
     };
     const scoreThreshold = userOverrides.scoreThreshold ?? 3;
 
-    // BPM search range: use detected profile if available, else fall back to genre-typical range.
-    // Genre-specific defaults prevent a wide 60–190 sweep when BPM data is unavailable
-    // (e.g. niche artists Deezer doesn't know about).
-    const genreBpmRange = fg ? GENRE_BPM_RANGES[fg.toLowerCase()] : null;
+    // BPM search range: real BPM from profile first, then genre-typical range (forced or
+    // auto-detected), then wide fallback. Genre-specific ranges prevent a 60–190 sweep
+    // when Deezer has no BPM data for niche/new releases.
+    const activeGenre   = fg ?? profileForScoring.primaryGenre ?? null;
+    const genreBpmRange = activeGenre ? GENRE_BPM_RANGES[activeGenre.toLowerCase()] ?? null : null;
     const baseBpmMin = profileForScoring.bpmMin ?? (genreBpmRange?.[0] ?? 90);
     const baseBpmMax = profileForScoring.bpmMax ?? (genreBpmRange?.[1] ?? 160);
     const searchMin  = baseBpmMin;
@@ -286,19 +306,21 @@ async function queueNextVibeTrack() {
         const chart = await getAppleMusicGenreChart(forcedGenreId, 50);
         chartCandidates = chart.sort(() => Math.random() - 0.5);
       } catch (fetchErr) {
-        log("[AML] Genre chart fetch failed:", fetchErr?.message);
+        log("[TS] Genre chart fetch failed:", fetchErr?.message);
       }
     }
 
-    // Pre-fetch all Deezer sources in parallel — wide BPM search (all 5 neutral queries at once)
-    // and genre radio (authentic genre-tagged pool). Both run once before the scoring loop
-    // so retries don't hammer the API.
-    const deezerGenreId = fg ? DEEZER_GENRE_IDS[fg.toLowerCase()] ?? null : null;
-    const [bpmCandidates, genreRadioCandidates] = await Promise.all([
+    // Pre-fetch all Deezer sources in parallel — wide BPM search (5 neutral queries at once)
+    // and a genre-keyword BPM search for the active genre (forced or auto-detected). Both run
+    // once before the scoring loop so retries don't hammer the API.
+    // Note: Deezer's /genre/{id}/radio endpoint was removed (returns 600 error for all IDs).
+    const activeGenreForSearch = fg ?? profileForScoring.primaryGenre ?? null;
+    const genreSearchTerm = activeGenreForSearch ? GENRE_SEARCH_TERMS[activeGenreForSearch.toLowerCase()] ?? null : null;
+    const [bpmCandidates, genreCandidates] = await Promise.all([
       searchDeezerByBPMWide(searchMin, searchMax),
-      deezerGenreId ? getDeezerGenreRadio(deezerGenreId) : Promise.resolve([]),
+      genreSearchTerm ? searchDeezerByBPM(searchMin, searchMax, 50, genreSearchTerm) : Promise.resolve([]),
     ]);
-    log(`[AML] Candidate pool — chart: ${chartCandidates.length}, genre radio: ${genreRadioCandidates.length}, BPM wide: ${bpmCandidates.length}`);
+    log(`[TS] Candidate pool — chart: ${chartCandidates.length}, genre search: ${genreCandidates.length}, BPM wide: ${bpmCandidates.length}`);
 
     // When genre is forced, only exclude by track ID (not by artist) — the genre chart
     // has limited artists and artist-exclusion quickly starves the pool.
@@ -314,7 +336,7 @@ async function queueNextVibeTrack() {
     for (let attempt = 0; attempt < 5 && !scored.length; attempt++) {
       const seedArtistId = radioSeedQueue.length > 0 ? radioSeedQueue[0] : fallbackSeedId;
 
-      let candidates = [...chartCandidates, ...genreRadioCandidates, ...bpmCandidates];
+      let candidates = [...chartCandidates, ...genreCandidates, ...bpmCandidates];
       if (useRadio && attempt === 0 && seedArtistId) {
         candidates = [...candidates, ...await getDeezerRadio(seedArtistId)];
       }
@@ -350,10 +372,12 @@ async function queueNextVibeTrack() {
         }
       }
 
-      scored = verified
-        .map(t => ({ ...t, score: scoreCandidate(t, profileForScoring, alreadyQueued) }))
-        .filter(t => t.score >= scoreThreshold)
-        .sort((a, b) => b.score - a.score);
+      const withScores = verified.map(t => ({ ...t, score: scoreCandidate(t, profileForScoring, alreadyQueued) }));
+      if (debugMode && verified.length) {
+        const dist = withScores.reduce((acc, t) => { acc[t.score] = (acc[t.score] || 0) + 1; return acc; }, {});
+        log(`[TS] Score distribution (${verified.length} verified, threshold ${scoreThreshold}):`, JSON.stringify(dist));
+      }
+      scored = withScores.filter(t => t.score >= scoreThreshold).sort((a, b) => b.score - a.score);
 
       if (!scored.length && radioSeedQueue.length > 0) radioSeedQueue.shift();
     }
@@ -368,27 +392,35 @@ async function queueNextVibeTrack() {
         .filter(t => t.score >= scoreThreshold)
         .sort((a, b) => b.score - a.score);
       if (scored.length) {
-        log(`[AML] Pool exhaustion rescue — relaxing artist exclusion (${scored.length} candidates recovered)`);
+        log(`[TS] Pool exhaustion rescue — relaxing artist exclusion (${scored.length} candidates recovered)`);
       }
     }
 
-    // When genre is explicitly forced, don't degrade to wrong-genre tracks — skip the slot
-    // and let the next track trigger a fresh attempt with different candidates.
-    if (!scored.length && profileForScoring.forcedGenre) {
-      log(`[AML] No ${profileForScoring.forcedGenre} candidates — will retry on next track`);
-      return;
-    }
-
-    // Fallback: progressively lower the score threshold but keep genre/era preferences.
-    // Only runs in auto-genre mode — forced-genre path exits above.
-    // Steps down by 1 at a time (e.g. 3→2→1) so we don't jump straight from strict to anything-goes.
-    if (!scored.length && scoreThreshold > 1) {
-      for (let fallback = scoreThreshold - 1; fallback >= 1 && !scored.length; fallback--) {
+    // Threshold fallback — step down by 1 until something passes.
+    // In forced-genre mode: GENRE_CORE already hard-excludes wrong-genre tracks (-1),
+    // so anything scoring ≥ 1 is genuinely the right genre, just imperfect era/BPM.
+    // Floor is 1 in auto mode, 2 in forced mode (small extra safety margin).
+    // effectiveThreshold tracks the actual floor used so the MB verification check below
+    // uses the same bar (not the original, stricter scoreThreshold).
+    let effectiveThreshold = scoreThreshold;
+    if (!scored.length && verified.length > 0 && scoreThreshold > 1) {
+      const floor = profileForScoring.forcedGenre ? 2 : 1;
+      for (let fallback = scoreThreshold - 1; fallback >= floor && !scored.length; fallback--) {
         scored = verified
           .map(t => ({ ...t, score: scoreCandidate(t, profileForScoring, alreadyQueued) }))
           .filter(t => t.score >= fallback)
           .sort((a, b) => b.score - a.score);
+        if (scored.length) {
+          effectiveThreshold = fallback;
+          log(`[TS] Threshold relaxed to ${fallback} — ${scored.length} candidate(s) recovered`);
+        }
       }
+    }
+
+    // When genre is forced and threshold fallback also found nothing, skip the slot.
+    if (!scored.length && profileForScoring.forcedGenre) {
+      log(`[TS] No ${profileForScoring.forcedGenre} candidates — will retry on next track`);
+      return;
     }
 
     // Last resort: drop era constraints, find something genre-adjacent
@@ -401,7 +433,7 @@ async function queueNextVibeTrack() {
     }
 
     if (!scored.length) {
-      log("[AML] No candidates at all — skipping this slot");
+      log("[TS] No candidates at all — skipping this slot");
       return;
     }
 
@@ -410,7 +442,7 @@ async function queueNextVibeTrack() {
     // fetch the real first-release-date for each top candidate in parallel, re-score,
     // and pick the first that still passes. Cache results so the second lookup when
     // the track actually plays is an instant hit.
-    const TOP_VERIFY = Math.min(scored.length, scoreThreshold * 5);
+    const TOP_VERIFY = Math.min(scored.length, effectiveThreshold * 5);
     const mbDates = await Promise.all(
       scored.slice(0, TOP_VERIFY).map(c =>
         c.isrc ? getMBFirstRelease(c.isrc).catch(() => null) : Promise.resolve(null)
@@ -422,19 +454,19 @@ async function queueNextVibeTrack() {
       const mbDate   = mbDates[i];
       const verified = mbDate ? { ...c, releaseDate: mbDate } : c;
       const vScore   = mbDate ? scoreCandidate(verified, profileForScoring, alreadyQueued) : c.score;
-      if (vScore >= scoreThreshold) {
+      if (vScore >= effectiveThreshold) {
         winner = { ...verified, score: vScore };
         if (mbDate && mbDate !== c.releaseDate) {
-          log(`[AML] MB pre-verified "${c.title}": ${c.releaseDate} → ${mbDate}`);
+          log(`[TS] MB pre-verified "${c.title}": ${c.releaseDate} → ${mbDate}`);
         }
         break;
       }
-      if (mbDate) {
-        log(`[AML] Skipping "${c.title}" — MB date ${mbDate} drops score from ${c.score} to ${vScore}`);
+      if (mbDate && vScore !== c.score) {
+        log(`[TS] Skipping "${c.title}" — MB date ${mbDate} drops score from ${c.score} to ${vScore}`);
       }
     }
     if (!winner) {
-      log("[AML] No candidates passed MB date verification — will retry");
+      log("[TS] No candidates passed MB date verification — will retry");
       return;
     }
 
@@ -443,7 +475,7 @@ async function queueNextVibeTrack() {
       `${profileForScoring.dominantDecade ?? "Auto"}s`,
       profileForScoring.avgBPM ? `${Math.round(profileForScoring.avgBPM)} BPM` : null,
     ].filter(Boolean).join(" | ");
-    log(`[AML] Queuing: "${winner.title}" by ${winner.artistName} (score: ${winner.score}) [${filterDesc}]`);
+    log(`[TS] Queuing: "${winner.title}" by ${winner.artistName} (score: ${winner.score}) [${filterDesc}]`);
     queued = true;
     alreadyQueued.add(winner.id);
     const primaryArtist = winner.artistName?.split(/[,&]/)[0].trim().toLowerCase();
@@ -485,7 +517,7 @@ async function queueNextVibeTrack() {
     });
 
   } catch (err) {
-    console.error("[AML] Recommendation error:", err?.message ?? err);
+    console.error("[TS] Recommendation error:", err?.message ?? err);
   } finally {
     working = false;
     if (intercepting) {
@@ -501,7 +533,7 @@ async function queueNextVibeTrack() {
         if (failures <= 2) {
           setTimeout(() => queueNextVibeTrack(), QUEUE_COOLDOWN_MS + 500);
         } else {
-          log(`[AML] No candidates after ${failures} attempts — waiting for next track`);
+          log(`[TS] No candidates after ${failures} attempts — waiting for next track`);
           queueNextVibeTrack._consecutiveFailures = 0;
         }
       }
@@ -537,7 +569,7 @@ function evictStaleQueuedTracks() {
   if (!staleIds.length) return;
 
   const staleSet = new Set(staleIds);
-  log(`[AML] Evicting ${staleIds.length} stale queued track(s) after profile update:`,
+  log(`[TS] Evicting ${staleIds.length} stale queued track(s) after profile update:`,
     upNextList.filter(t => staleSet.has(t.id)).map(t => t.title).join(", "));
   window.postMessage({ type: `${PREFIX}CLEAR_QUEUED`, ids: staleIds }, "*");
   staleIds.forEach(id => alreadyQueued.delete(id)); // allow re-queueing if a better slot opens
@@ -550,10 +582,6 @@ function evictStaleQueuedTracks() {
 async function onNowPlayingChanged(track) {
   if (!track) return;
 
-  // Cancel any in-flight audio BPM analysis from the previous track.
-  window.postMessage({ type: `${PREFIX}STOP_BPM_ANALYSIS` }, "*");
-  audioBPMEnriched   = null;
-
   // New track = fresh start for the retry counter.
   queueNextVibeTrack._consecutiveFailures = 0;
 
@@ -565,7 +593,7 @@ async function onNowPlayingChanged(track) {
   }
 
   const enriched = { ...track, genreNames: genres, bpm: null };
-  log(`[AML] Now playing: "${track.title}" — ${track.artistName}  ISRC: ${track.isrc}  Genres: ${genres.join(", ")}`);
+  log(`[TS] Now playing: "${track.title}" — ${track.artistName}  ISRC: ${track.isrc}  Genres: ${genres.join(", ")}`);
 
   if (track.id) playedThisSession.add(track.id);
   recentTracks.push(enriched);
@@ -580,7 +608,7 @@ async function onNowPlayingChanged(track) {
   upNextList = upNextList.filter(t => t.id !== track.id);
   saveUpNext();
 
-  currentProfile = { ...buildVibeProfile(recentTracks), ...userOverrides };
+  currentProfile = buildProfile();
   saveVibeProfile();
 
   // Block recommendations until both Deezer (BPM) and MusicBrainz (original release year)
@@ -608,11 +636,6 @@ async function onNowPlayingChanged(track) {
         enriched.bpm            = deezer.bpm;
         enriched.deezerId       = deezer.deezerId;
         enriched.artistDeezerId = deezer.artistDeezerId;
-      } else {
-        // Deezer has no BPM — analyze the live audio stream instead.
-        audioBPMEnriched   = enriched;
-        audioBPMGeneration = myGeneration;
-        window.postMessage({ type: `${PREFIX}START_BPM_ANALYSIS` }, "*");
       }
       // MusicBrainz first-release-date overrides Apple Music's releaseDate, which
       // returns the remaster year for catalog reissues and poisons era detection.
@@ -624,7 +647,7 @@ async function onNowPlayingChanged(track) {
       } else if (mbDate) {
         enriched.releaseDate = mbDate;
       }
-      currentProfile = { ...buildVibeProfile(recentTracks), ...userOverrides };
+      currentProfile = buildProfile();
       saveVibeProfile();
 
       // Re-score queued tracks against the updated profile — remove any that no longer fit.
@@ -637,7 +660,7 @@ async function onNowPlayingChanged(track) {
       // Only kick off a recommendation if nothing is already running — if working is true,
       // the in-flight call's finally block will handle filling remaining slots.
       const ourAhead = upNextList.filter(t => alreadyQueued.has(t.id)).length;
-      log(`[AML] Enrichment complete for "${track.title}" — BPM: ${deezer?.bpm ?? "—"} | ${ourAhead}/${QUEUE_AHEAD} AML tracks ahead`);
+      log(`[TS] Enrichment complete for "${track.title}" — BPM: ${deezer?.bpm ?? "—"} | ${ourAhead}/${QUEUE_AHEAD} TS tracks ahead`);
       if (intercepting && ourAhead < QUEUE_AHEAD && !working) queueNextVibeTrack();
     });
   } else {
@@ -652,6 +675,7 @@ async function onNowPlayingChanged(track) {
     type:       "VIBE_PROFILE_UPDATED",
     profile: {
       avgBPM:         currentProfile.avgBPM,
+      estimatedBPM:   currentProfile.estimatedBPM ?? null,
       primaryGenre:   currentProfile.primaryGenre,
       dominantDecade: currentProfile.dominantDecade,
     },
@@ -662,8 +686,18 @@ async function onNowPlayingChanged(track) {
 
 async function onQueueChanged(items, position) {
   if (!intercepting) return;
+
+  // Always sync the popup display to what's actually coming up in the real queue.
+  // This runs before any early-return so the display is accurate even when we're
+  // not about to queue anything (e.g. queue is full, or user went back a track and
+  // a non-TS track is now sitting between the current position and our queued tracks).
+  const realAhead = (items ?? []).slice(position + 1, position + 1 + 5).filter(t => t?.id);
+  chrome.storage.local.set({
+    upNextList: realAhead.map(t => ({ id: t.id, title: t.title, artistName: t.artistName })),
+  }).catch(() => {});
+
   if (items.length <= position + QUEUE_AHEAD) {
-    log(`[AML] Queue changed — only ${items.length - position - 1} tracks ahead, waiting for queue to fill`);
+    log(`[TS] Queue changed — only ${items.length - position - 1} tracks ahead, waiting for queue to fill`);
     return;
   }
 
@@ -673,7 +707,7 @@ async function onQueueChanged(items, position) {
   const remaining = items.slice(position + 1);
   const ourTracksAhead = remaining.filter(t => t?.id && alreadyQueued.has(t.id)).length;
   if (ourTracksAhead >= QUEUE_AHEAD) {
-    log(`[AML] Queue full — ${ourTracksAhead} AML tracks already ahead`);
+    log(`[TS] Queue full — ${ourTracksAhead} TS tracks already ahead`);
     return;
   }
 
@@ -681,7 +715,7 @@ async function onQueueChanged(items, position) {
   // queueItemsDidChange fires multiple times per playNext(); the cooldown absorbs them.
   const cooldownRemaining = QUEUE_COOLDOWN_MS - (Date.now() - lastQueuedAt);
   if (cooldownRemaining > 0) {
-    log(`[AML] Cooldown — ${Math.round(cooldownRemaining / 1000)}s remaining`);
+    log(`[TS] Cooldown — ${Math.round(cooldownRemaining / 1000)}s remaining`);
     return;
   }
 
@@ -689,12 +723,12 @@ async function onQueueChanged(items, position) {
   // enrichmentPending is the primary gate; enrichmentUntil is a safety fallback.
   // If Safari suspended mid-enrichment and the promise never settled, auto-clear here.
   if (enrichmentPending && Date.now() > enrichmentUntil) {
-    log("[AML] Enrichment timeout expired — unblocking");
+    log("[TS] Enrichment timeout expired — unblocking");
     enrichmentPending = false;
     enrichmentUntil   = 0;
   }
   if (enrichmentPending || Date.now() < enrichmentUntil) {
-    log("[AML] Waiting for track enrichment before recommending");
+    log("[TS] Waiting for track enrichment before recommending");
     return;
   }
 
@@ -738,22 +772,6 @@ window.addEventListener("message", e => {
       break;
     case `${PREFIX}PLAY_NEXT_OK`:
       break;
-    case `${PREFIX}BPM_RESULT`: {
-      const bpm = e.data.bpm;
-      if (audioBPMEnriched && audioBPMGeneration === enrichmentGeneration && bpm) {
-        audioBPMEnriched.bpm = bpm;
-        audioBPMEnriched = null;
-        currentProfile = { ...buildVibeProfile(recentTracks), ...userOverrides };
-        saveVibeProfile();
-        log(`[AML] Audio BPM detected: ${bpm}`);
-        chrome.runtime.sendMessage({
-          type:    "VIBE_PROFILE_UPDATED",
-          profile: { avgBPM: currentProfile.avgBPM, primaryGenre: currentProfile.primaryGenre, dominantDecade: currentProfile.dominantDecade },
-          upNext:  upNextList.slice(),
-        });
-      }
-      break;
-    }
   }
 });
 
@@ -764,12 +782,12 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
 
   if (enrichmentPending) {
-    log("[AML] Resetting stale enrichmentPending after visibility restore");
+    log("[TS] Resetting stale enrichmentPending after visibility restore");
     enrichmentPending = false;
     enrichmentUntil   = 0;
   }
   if (working) {
-    log("[AML] Resetting stale working flag after visibility restore");
+    log("[TS] Resetting stale working flag after visibility restore");
     working = false;
   }
 
@@ -831,7 +849,7 @@ function applyOverrides(newOverrides) {
       `Match: ${THRESHOLD_LABELS[threshold] ?? threshold}`,
       userOverrides.pinnedArtist ? `Seed: ${userOverrides.pinnedArtist}` : null,
     ].filter(Boolean).join(" | ");
-    log(`[AML] Filters → ${desc}`);
+    log(`[TS] Filters → ${desc}`);
   }
 
   if (recentTracks.length > 0) {
@@ -844,7 +862,7 @@ function applyOverrides(newOverrides) {
       r => {
         if (r?.artistDeezerId) {
           userOverrides.pinnedArtistDeezerId = r.artistDeezerId;
-          log("[AML] Pinned artist resolved:", userOverrides.pinnedArtist, "→ ID", r.artistDeezerId);
+          log("[TS] Pinned artist resolved:", userOverrides.pinnedArtist, "→ ID", r.artistDeezerId);
         }
       }
     );
@@ -875,7 +893,7 @@ setInterval(() => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "TOGGLE_INTERCEPT") {
     intercepting = message.enabled;
-    log(`[AML] Interception ${intercepting ? "on" : "off"}`);
+    log(`[TS] Interception ${intercepting ? "on" : "off"}`);
   }
   if (message.type === "GET_PROFILE") {
     const nowPlaying = recentTracks[recentTracks.length - 1];
@@ -896,6 +914,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // The popup restores its own UI from storage separately, but the engine starts clean.
 chrome.storage.local.remove(["overrides", "vibeProfile", "upNextList"]);
 
-log("[AML] Content script loaded");
+log("[TS] Content script loaded");
 
 } // end init guard

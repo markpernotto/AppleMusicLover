@@ -62,6 +62,56 @@ Controls combine independently. Some examples:
 
 ---
 
+## Debug logging
+
+Enable **Debug logging** in the popup footer to see the recommendation engine's decisions in your browser's JavaScript console (Safari → Develop → Web Inspector for music.apple.com).
+
+### What you'll see
+
+**Now playing / enrichment**
+```
+[AML] Now playing: "Track Title" — Artist  ISRC: ...  Genres: House, Music
+[AML] Enrichment complete for "Track Title" — BPM: 128 | 2/3 AML tracks ahead
+```
+Confirms the extension saw the track change and what BPM it got from Deezer. `2/3 AML tracks ahead` means 2 of the 3 buffered slots are already filled.
+
+If Deezer doesn't have BPM data, you'll see `BPM: 0` and then (in the page console, not the extension console):
+```
+[AML bridge] BPM: analysis done — 24 beats → 126
+```
+The extension will analyze the live audio for ~15 seconds and fill in the BPM once it has enough data.
+
+**Candidate pool**
+```
+[AML] Candidate pool — chart: 50, genre radio: 0, BPM wide: 116
+```
+How many candidates were gathered before scoring: Apple Music genre chart songs, Deezer genre radio tracks, and Deezer BPM-range search results.
+
+**Score distribution**
+```
+[AML] Score distribution (18 verified, threshold 3): {"-1":5,"0":2,"1":4,"2":4,"3":2,"5":1}
+```
+After resolving 18 candidates to full Apple Music tracks, this shows how many scored at each level. The threshold (from your Match slider) is what a candidate must reach to get queued.
+
+| Score | What it means |
+|---|---|
+| **-1** | Hard-excluded — already played this session, already queued, or wrong genre when genre is locked |
+| **0** | No match on any dimension — different genre, BPM far off, wrong era |
+| **1–2** | Partial match — correct genre but era or BPM penalty dragging it down |
+| **3** | Genre match only — no BPM data available, era is neutral |
+| **4–5** | Genre + era or genre + partial BPM match |
+| **6–8** | Strong match across all three dimensions |
+
+If most candidates are scoring -1, the pool is exhausted — the extension has already played or queued most of the best matches. If most are scoring 2 when your threshold is 3, try moving the Match slider toward Loose.
+
+**What gets queued**
+```
+[AML] Queuing: "Track Title" by Artist (score: 5) [House | 2020s | 128 BPM]
+```
+The winning candidate, its score, and the profile dimensions it matched.
+
+---
+
 ## What it doesn't do
 
 - It doesn't reorder your existing queue — it only adds tracks ahead of what's coming next

@@ -43,16 +43,16 @@ const debugToggle      = document.getElementById("debugToggle");
 function renderProfile() {
   rendering = true;
 
-  const effectiveBPM = currentProfile?.avgBPM
-    ? currentProfile.avgBPM + overrides.bpmOffset
-    : null;
+  const rawBPM = currentProfile?.avgBPM ?? currentProfile?.estimatedBPM ?? null;
+  const effectiveBPM = rawBPM ? rawBPM + overrides.bpmOffset : null;
+  const bpmIsEstimated = effectiveBPM != null && !currentProfile?.avgBPM;
 
   const threshold   = overrides.scoreThreshold ?? MATCH_DEFAULT;
   const anyOverride = overrides.forcedGenre || overrides.forcedDecade || overrides.bpmOffset !== 0 || threshold !== MATCH_DEFAULT;
   const vibeHint = document.getElementById("vibeHint");
 
   // Top stats — always show what's actually driving recommendations
-  bpmValue.textContent   = effectiveBPM ? `${effectiveBPM}` : "—";
+  bpmValue.textContent   = effectiveBPM ? `${bpmIsEstimated ? "~" : ""}${effectiveBPM}` : "—";
   genreValue.textContent = overrides.forcedGenre ?? currentProfile?.primaryGenre ?? "—";
   const detectedDecadeLabel = !currentProfile?.dominantDecade ? "—"
     : currentProfile.dominantDecade < 1960 ? "<1960s"

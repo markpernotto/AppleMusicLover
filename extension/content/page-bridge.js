@@ -36,96 +36,10 @@
     return new Promise(r => setTimeout(r, 500)).then(() => waitForMK(retries - 1));
   }
 
-  // --- Audio BPM analysis ---
-  // Runs here (MAIN world) so we can access the <audio> element.
-  // AudioContext and source are created once and reused across tracks.
-  let _audioCtx  = null;
-  let _analyser  = null;
-  let _bpmRafId  = null;
-
-  function stopBPMAnalysis() {
-    if (_bpmRafId) { cancelAnimationFrame(_bpmRafId); _bpmRafId = null; }
-  }
-
-  function startBPMAnalysis() {
-    stopBPMAnalysis();
-    const audioEl = document.querySelector("audio");
-    if (!audioEl) return;
-    try {
-      if (!_audioCtx) {
-        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const source = _audioCtx.createMediaElementSource(audioEl);
-        _analyser = _audioCtx.createAnalyser();
-        _analyser.fftSize = 1024;
-        _analyser.smoothingTimeConstant = 0.8;
-        source.connect(_analyser);
-        _analyser.connect(_audioCtx.destination);
-      }
-      if (_audioCtx.state === "suspended") _audioCtx.resume();
-
-      const freqData  = new Float32Array(_analyser.frequencyBinCount);
-      const binHz     = _audioCtx.sampleRate / _analyser.fftSize;
-      const bassLo    = Math.max(1, Math.floor(60  / binHz));
-      const bassHi    = Math.ceil(180 / binHz);
-      const history   = [];
-      const HIST_LEN  = 43; // ~1.5 s at 30 fps
-      const beatTimes = [];
-      let lastBeat    = 0;
-      const deadline  = performance.now() + 15000;
-
-      function tick() {
-        const now = performance.now();
-        if (now >= deadline) {
-          const bpm = calcBPM(beatTimes);
-          if (bpm) window.postMessage({ type: `${PREFIX}BPM_RESULT`, bpm }, "*");
-          return;
-        }
-        _analyser.getFloatFrequencyData(freqData);
-        let energy = 0;
-        for (let i = bassLo; i <= bassHi; i++) energy += Math.pow(10, freqData[i] / 10);
-        energy /= (bassHi - bassLo + 1);
-        history.push(energy);
-        if (history.length > HIST_LEN) history.shift();
-        if (history.length >= 10) {
-          const avg = history.reduce((s, v) => s + v, 0) / history.length;
-          if (energy > avg * 1.35 && now - lastBeat > 250) {
-            beatTimes.push(now);
-            lastBeat = now;
-          }
-        }
-        _bpmRafId = requestAnimationFrame(tick);
-      }
-      _bpmRafId = requestAnimationFrame(tick);
-    } catch (e) {
-      console.log("[AML bridge] BPM analysis error:", e.message);
-    }
-  }
-
-  function calcBPM(times) {
-    if (times.length < 8) return null;
-    const intervals = [];
-    for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i - 1]);
-    const bpms = intervals.map(ms => 60000 / ms).filter(b => b >= 60 && b <= 220);
-    if (bpms.length < 4) return null;
-    bpms.sort((a, b) => a - b);
-    const med   = bpms[Math.floor(bpms.length / 2)];
-    const close = bpms.filter(b => Math.abs(b - med) <= 12);
-    return Math.round(close.reduce((s, b) => s + b, 0) / close.length);
-  }
-
   // Listen for commands from content script
   window.addEventListener("message", e => {
     if (e.source !== window || !e.data?.type?.startsWith(PREFIX)) return;
     const mk = getMK();
-
-    switch (e.data.type) {
-      case `${PREFIX}START_BPM_ANALYSIS`:
-        startBPMAnalysis();
-        return;
-      case `${PREFIX}STOP_BPM_ANALYSIS`:
-        stopBPMAnalysis();
-        return;
-    }
 
     if (!mk) return;
     switch (e.data.type) {
@@ -157,7 +71,7 @@
           // isolated world). Use it directly — avoids the amp-api.music.apple.com CORS block
           // that hits mk.api.music() from the MAIN world.
           try { insertSong(rawSong); } catch (err) {
-            console.error("[AML bridge] MediaItem construction failed:", err?.message ?? err);
+            console.error("[TS bridge] MediaItem construction failed:", err?.message ?? err);
           }
         } else {
           // Fallback: fetch via MusicKit (may hit CORS on some clients)
@@ -168,7 +82,7 @@
               if (!song) throw new Error(`Song ${songId} not found`);
               insertSong(song);
             })
-            .catch(err => console.error("[AML bridge] FAILED:", err?.message ?? err));
+            .catch(err => console.error("[TS bridge] FAILED:", err?.message ?? err));
         }
         break;
       }
@@ -221,7 +135,7 @@
 
   // Push events to content script
   waitForMK().then(mk => {
-    console.log("[AML bridge] MusicKit connected");
+    console.log("[TS bridge] MusicKit connected");
 
     mk.addEventListener("nowPlayingItemDidChange", () => {
       window.postMessage({
@@ -259,5 +173,5 @@
       track: extractTrack(mk.nowPlayingItem),
     }, "*");
 
-  }).catch(err => console.error("[AML bridge]", err));
+  }).catch(err => console.error("[TS bridge]", err));
 })();

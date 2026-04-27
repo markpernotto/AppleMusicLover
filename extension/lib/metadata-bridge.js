@@ -128,7 +128,7 @@ async function getDeezerSimilarArtistTracks(artistDeezerId, artistLimit = 3, tra
 
   // Deezer's /artist/{id}/top response omits ISRC — have to fetch each track individually
   // to pick it up. Cap total enrichment to keep the latency reasonable.
-  const flat     = topLists.flat().slice(0, 24);
+  const flat     = topLists.flat().slice(0, 50);
   const enriched = await Promise.all(flat.map(async t => {
     if (t.isrc) return t;
     try {

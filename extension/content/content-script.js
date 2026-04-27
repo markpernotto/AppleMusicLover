@@ -10,6 +10,7 @@ const VIBE_WINDOW  = 5;
 const QUEUE_AHEAD  = 3;
 
 let debugMode = false;
+let lastAutoPlayWarnAt = 0;
 function log(...args) { if (debugMode) console.log(...args); }
 
 let recentTracks    = [];
@@ -372,11 +373,23 @@ async function queueNextVibeTrack() {
     const decadeSuffix  = (fd && fd !== "pre1960") ? ` ${fd}s` : (fd === "pre1960" ? " classic" : "");
     const amSearchTerm  = activeGenre ? `${GENRE_SEARCH_TERMS[activeGenre.toLowerCase()] ?? activeGenre}${decadeSuffix}` : null;
 
-    const [chartRaw, amSearchCandidates] = await Promise.all([
-      activeGenreId ? getAppleMusicGenreChart(activeGenreId, 50, chartOffset).catch(e => { log("[TS] Chart fetch failed:", e?.message); return []; }) : Promise.resolve([]),
-      amSearchTerm  ? searchAppleMusicByTerm(amSearchTerm, 25, searchOffset).catch(e => { log("[TS] AM search failed:", e?.message); return []; }) : Promise.resolve([]),
+    // Apple Music caps chart limit ≈50 and search limit ≈25 per call. Double the pool
+    // by fetching each twice with non-overlapping offsets — same latency, 2× variety,
+    // gives the stricter BPM/era filter more to work with.
+    const [chartRaw1, chartRaw2, amSearch1, amSearch2] = await Promise.all([
+      activeGenreId ? getAppleMusicGenreChart(activeGenreId, 50, chartOffset).catch(e => { log("[TS] Chart fetch 1 failed:", e?.message); return []; }) : Promise.resolve([]),
+      activeGenreId ? getAppleMusicGenreChart(activeGenreId, 50, chartOffset + 50).catch(() => []) : Promise.resolve([]),
+      amSearchTerm  ? searchAppleMusicByTerm(amSearchTerm, 25, searchOffset).catch(e => { log("[TS] AM search 1 failed:", e?.message); return []; }) : Promise.resolve([]),
+      amSearchTerm  ? searchAppleMusicByTerm(amSearchTerm, 25, searchOffset + 25).catch(() => []) : Promise.resolve([]),
     ]);
-    const chartCandidates = chartRaw.sort(() => Math.random() - 0.5);
+    // Dedupe by id when merging the two fetches — Apple sometimes overlaps near the boundary.
+    const seenChartIds  = new Set();
+    const chartCandidates = [...chartRaw1, ...chartRaw2]
+      .filter(t => t?.id && !seenChartIds.has(t.id) && seenChartIds.add(t.id))
+      .sort(() => Math.random() - 0.5);
+    const seenSearchIds = new Set();
+    const amSearchCandidates = [...amSearch1, ...amSearch2]
+      .filter(t => t?.id && !seenSearchIds.has(t.id) && seenSearchIds.add(t.id));
 
     // Deezer fallback sources — kept as a safety net but now secondary to Apple Music.
     // Note: Deezer's /genre/{id}/radio endpoint was removed (returns 600 error for all IDs).
@@ -409,7 +422,7 @@ async function queueNextVibeTrack() {
         // seed artist themselves. Both still get filtered by BPM/era/genre below.
         const [radioTracks, similarTracks] = await Promise.all([
           getDeezerRadio(seedArtistId),
-          getDeezerSimilarArtistTracks(seedArtistId, 3, 8),
+          getDeezerSimilarArtistTracks(seedArtistId, 5, 10),
         ]);
         log(`[TS] Artist-seeded — radio: ${radioTracks.length}, similar-artist top tracks: ${similarTracks.length}`);
         candidates = [...candidates, ...radioTracks, ...similarTracks];
@@ -477,7 +490,11 @@ async function queueNextVibeTrack() {
     // effectiveThreshold tracks the actual floor used so the MB verification check below
     // uses the same bar (not the original, stricter scoreThreshold).
     let effectiveThreshold = scoreThreshold;
-    if (!scored.length && verified.length > 0 && scoreThreshold > 1) {
+    // Skip relaxation entirely when the user has locked era or genre — relaxing the
+    // threshold is exactly the drift they're trying to avoid. Better to wait for the
+    // next track and try again than to queue a marginal pick.
+    const lockedFilter = !!userOverrides.forcedGenre || !!userOverrides.forcedDecade;
+    if (!scored.length && verified.length > 0 && scoreThreshold > 1 && !lockedFilter) {
       const floor = profileForScoring.forcedGenre ? 2 : 1;
       for (let fallback = scoreThreshold - 1; fallback >= floor && !scored.length; fallback--) {
         scored = verified
@@ -786,8 +803,9 @@ async function onQueueChanged(items, position) {
   const firstAhead = (items ?? [])[position + 1];
   if (firstAhead?.id && alreadyQueued.size > 0 && !alreadyQueued.has(firstAhead.id)) {
     const tsTracksBehind = (items ?? []).slice(position + 1).filter(t => t?.id && alreadyQueued.has(t.id)).length;
-    if (tsTracksBehind > 0) {
+    if (tsTracksBehind > 0 && Date.now() - lastAutoPlayWarnAt > 60_000) {
       log(`[TS] Apple AutoPlay is inserting tracks ahead of your TS queue — disable the ∞ AutoPlay toggle to keep Timbre Segue in control`);
+      lastAutoPlayWarnAt = Date.now();
     }
   }
 
@@ -810,7 +828,7 @@ async function onQueueChanged(items, position) {
   }
 
   if (items.length <= position + QUEUE_AHEAD) {
-    log(`[TS] Queue changed — only ${items.length - position - 1} tracks ahead, waiting for queue to fill`);
+    log(`[TS] Queue changed — only ${Math.max(0, items.length - position - 1)} tracks ahead, waiting for queue to fill`);
     return;
   }
 

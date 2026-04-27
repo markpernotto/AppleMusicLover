@@ -8,7 +8,7 @@ const WEIGHTS = {
   vocal:  2,  // reserved for AcousticBrainz — future
 };
 
-const BPM_TOLERANCE = 15;
+const BPM_TOLERANCE = 10;
 
 // Build a vibe profile from the last N tracks in the queue.
 // profile is the source of truth for what we're trying to match.

@@ -3,6 +3,7 @@
 
 # Claude Code session memory — internal tooling, not part of the project
 memory/
+plans/
 
 # POC / exploration scripts — validated during development, not part of the extension
 poc/
